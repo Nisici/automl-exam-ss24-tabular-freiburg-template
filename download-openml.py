@@ -82,7 +82,7 @@ if __name__ == "__main__":
         fold_dir = task_dir / str(fold)
         if not fold_dir.exists():
             fold_dir.mkdir(parents=True)
-        logger.info(f"Writing data for {fold} to {fold_dir}")
+        (f"Writing data for {fold} to {fold_dir}")
 
         X_train.to_parquet(fold_dir / "X_train.parquet")
         y_train.to_frame().to_parquet(fold_dir / "y_train.parquet")
