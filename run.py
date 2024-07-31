@@ -8,6 +8,7 @@ to a file, which we will grade using github classrooms!
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 import numpy as np
 from automl.data import Dataset
@@ -19,9 +20,12 @@ import os
 import pandas as pd
 from sklearn.metrics import r2_score
 import xgboost as xgb
+from openfe import OpenFE, tree_to_formula, transform, TwoStageFeatureSelector
+
+import warnings
+warnings.filterwarnings("ignore")
 
 logger = logging.getLogger(__name__)
-
 FILE = Path(__file__).absolute().resolve()
 DATADIR = FILE.parent / "data"
 MODELS = ["xgboost"]
@@ -69,48 +73,78 @@ def test_model(model, x_test, y_test, output_path, model_name):
     if model_name == 'xgboost':
         x_test = xgb.DMatrix(x_test, enable_categorical=True)
     test_preds = model.predict(x_test)
-    logger.info("Writing predictions to disk")
-    with output_path.open("wb") as f:
-        np.save(f, test_preds)
+    logger.info("Writing performance to disk")
     if y_test is not None:
         r2_test = r2_score(y_test, test_preds)
         logger.info(f"R^2 on test set: {r2_test}")
+        file_path = os.path.join(output_path, "r2_score.txt")
+        f = open(file_path, "a")
+        message = "score: {}, model: {}\n".format(r2_test, model)
+        f.write(message)
+        f.close()
     else:
         # This is the setting for the exam dataset, you will not have access to y_test
         logger.info("No test set")
 
+def remove_underscores_and_parenthesis(strings):
+    new_strings = []
+    for s in strings:
+        s = s.replace("_", "")
+        s = s.replace("(", "")
+        s = s.replace(")", "")
+        new_strings.append(s)
+    return new_strings
+
+def feature_engineering(x_train, y_train, x_test, n_jobs=6, feat_eng='openfe'):
+    x_train.columns = remove_underscores_and_parenthesis(x_train.columns)
+    x_test.columns = remove_underscores_and_parenthesis(x_test.columns)
+    if feat_eng == 'openfe':
+        ofe = OpenFE()
+        new_features = ofe.fit(data=x_train, label=y_train, n_jobs=n_jobs,
+                               min_candidate_features=3000,verbose=-1)  # generate new features
+        x_train, x_test, = transform(x_train, x_test, new_features[:1],
+                                     n_jobs=n_jobs)
+    return x_train, x_test
 def main(
     task: str,
     fold: int,
     output_path: Path,
     seed: int,
     datadir: Path,
-    model: str
+    model: str,
+    feat_eng: str
 ):
     """
         DATA LOADING
     """
     dataset = Dataset.load(datadir=DATADIR, task=task, fold=fold)
     x_train, y_train, x_test, y_test = dataset.X_train, dataset.y_train, dataset.X_test, dataset.y_test
-    storage_path = os.path.join(os.getcwd(), "saved_models")
+    plot_path = os.path.join(os.getcwd(), "plots")
+    output_path_without = os.path.join(output_path, 'scores', task, 'without', model)
+    output_path_feat_eng = os.path.join(output_path, 'scores', task, feat_eng, model)
     """
-        AUTOML OPTIMIZATION without feature engineering
+                AUTOML OPTIMIZATION without feature engineering
     """
     logger.info("Fitting AutoML without feature engineering")
     logger.info("Chosen model: {}".format(model))
-    logger.info("Best model will be saved in path: {}".format(storage_path))
-    best_configuration, best_performance = HPO.choose_best_hyperparameters(x_train, y_train, storage_path=storage_path, model_name=model)
+    plot_path_no_feat_eng = os.path.join(plot_path, "without_feat_eng")
+    best_configuration, best_performance = HPO.choose_best_hyperparameters(x_train, y_train,
+                                                                           plot_path=plot_path_no_feat_eng,
+                                                                           model_name=model)
     best_model = train_best_model(model, best_configuration, x_train, y_train)
-    test_model(best_model, x_test, y_test, output_path, model_name=model)
+    test_model(best_model, x_test, y_test, output_path_without, model_name=model)
     """
            AUTOML OPTIMIZATION with feature engineering
     """
-    logger.info("Fitting AutoML with feature engineering")
-    #x_train, y_train = feature_engineering()
-    best_configuration, best_performance = HPO.choose_best_hyperparameters(x_train, y_train, storage_path=storage_path,
-                                                                           model_name=model)
-    best_model = train_best_model(model, best_configuration, x_train, y_train)
-    test_model(best_model, x_test, y_test, output_path, model_name=model)
+    if feat_eng != 'without':
+        logger.info("Fitting AutoML with feature engineering")
+        plot_path_feat_eng = os.path.join(plot_path, "feat_eng")
+        x_train, x_test = feature_engineering(x_train, y_train, x_test, feat_eng=feat_eng)
+        best_configuration, best_performance = HPO.choose_best_hyperparameters(x_train, y_train, plot_path=plot_path_feat_eng,
+                                                                               model_name=model)
+        best_model = train_best_model(model, best_configuration, x_train, y_train)
+        test_model(best_model, x_test, y_test, output_path_feat_eng, model_name=model)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -123,11 +157,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-path",
-        type=Path,
-        default=Path("predictions.npy"),
+        type=str,
+        default=os.getcwd(),
         help=(
             "The path to save the predictions to."
-            " By default this will just save to './predictions.npy'."
+            " By default this will just save to the current working directory."
         )
     )
     parser.add_argument(
@@ -167,7 +201,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model-name",
         default='xgboost',
-        help="Model name to do HPO on."
+        help="Model name to do HPO on.",
+        choices=['xgboost']
+    )
+    parser.add_argument(
+        "--feat-eng",
+        default="without",
+        help="Choose the feature engineering, default is without feature engineering",
+        choices= ['without', 'openfe']
     )
     args = parser.parse_args()
 
@@ -187,5 +228,6 @@ if __name__ == "__main__":
         output_path=args.output_path,
         datadir=args.datadir,
         seed=args.seed,
-        model=args.model_name
+        model=args.model_name,
+        feat_eng= args.feat_eng
     )
