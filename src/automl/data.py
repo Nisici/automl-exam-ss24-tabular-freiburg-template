@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 DATASET_MAP = dict(
     y_prop="361092",
     bike_sharing="361099",
-    brazilian_houses="361098"
+    brazilian_houses="361098",
+    exam_dataset="exam_dataset"
 )
 
 
