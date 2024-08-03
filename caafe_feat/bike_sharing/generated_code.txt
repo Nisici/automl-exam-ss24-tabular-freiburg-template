@@ -1,15 +1,24 @@
 
-# Feature name and description: 'is_night'
-# Usefulness: This feature will indicate if it is night time or not. This is useful because bike rentals might be lower during the night.
+# "is_day" feature that determines if the time is day or night
+# Usefulness: This adds useful real world knowledge to classify "count" as people are more likely to rent bikes during the day.
 # Input samples: 'hour': [23.0, 5.0, 14.0]
-df['is_night'] = df['hour'].apply(lambda x: 1 if (x > 20 or x < 6) else 0)
+df['is_day'] = ((df['hour'] > 6) & (df['hour'] < 20)).astype(float)
 
-# Feature name and description: 'is_winter'
-# Usefulness: This feature will indicate if it is winter or not. This is useful because bike rentals might be lower during winter due to cold weather.
-# Input samples: 'month': [6.0, 1.0, 4.0]
-df['is_winter'] = df['month'].apply(lambda x: 1 if (x == 12 or x < 3) else 0)
+# "feel_diff" feature that calculates the difference between the actual temperature and the feeling temperature
+# Usefulness: This adds useful real world knowledge to classify "count" as the perceived temperature can affect the decision to rent a bike.
+# Input samples: 'temp': [25.42, 9.84, 14.76], 'feel_temp': [28.79, 9.85, 16.66]
+df['feel_diff'] = df['temp'] - df['feel_temp']
 
-# Feature name and description: 'peak_hours'
-# Usefulness: This feature will indicate if the current hour is a peak hour or not. This is useful because bike rentals might be higher during peak hours (e.g., commuting hours).
-# Input samples: 'hour': [23.0, 5.0, 14.0]
-df['peak_hours'] = df['hour'].apply(lambda x: 1 if (x >= 7 and x <= 9) or (x >= 17 and x <= 19) else 0)
+# "bad_weather" feature that determines if the weather is bad (1) or not (0)
+# Usefulness: This adds useful real world knowledge to classify "count" as bad weather can discourage people from renting bikes.
+# Input samples: 'weather': [0.0, 0.0, 2.0]
+df['bad_weather'] = (df['weather'] > 1).astype(float)
+
+# "season_year" feature that combines the season and year
+# Usefulness: This adds useful real world knowledge to classify "count" as the demand for bikes can vary by season and year.
+# Input samples: 'season': [2.0, 1.0, 2.0], 'year': [0.0, 0.0, 0.0]
+df['season_year'] = df['season'] + df['year']*10
+
+# Explanation why the column "holiday" is dropped
+# The "holiday" column is dropped because it is highly correlated with the "workingday" column, which can lead to multicollinearity.
+df.drop(columns=['holiday'], inplace=True)

@@ -43,7 +43,7 @@ def choose_best_hyperparameters(x, y, plot_path, model_name, seed=42):
         #std_r2 = np.std(scores)
         return {"mean_r2": mean_r2}
 
-    num_samples = 10
+    num_samples = 1
     algo = TuneBOHB()
     # algo = tune.search.ConcurrencyLimiter(algo, max_concurrent=4)
     scheduler = HyperBandForBOHB(

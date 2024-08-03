@@ -83,11 +83,10 @@ def write_txt(filename, raw_text):
         with open(filename, "w") as f:
             f.write(raw_text)
 def test_model(model, x_test, y_test, output_path, model_name):
-    #test_preds = model.predict(x_test)
+    test_preds = model.predict(x_test)
     logger.info("Writing performance to disk")
     if y_test is not None:
-        #r2_test = r2_score(y_test, test_preds)
-        r2_test = model.score(x_test, y_test)
+        r2_test = r2_score(y_test, test_preds)
         logger.info(f"R^2 on test set: {r2_test}")
         now = datetime.datetime.now()
         date_string = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -139,9 +138,9 @@ def caafe(best_model, train_merged, label_name, task_name, best_config=None):
         with open(filename, 'r') as f:
             content = f.read()
         return content
-    caafe_dir = os.path.join(os.getcwd(), 'caafe', task_name)
+    caafe_dir = os.path.join(os.getcwd(), 'caafe_feat', task_name)
     """
-    openai.apy_key = 'YOUR-API-KEY'
+    openai.api_key = 'YOUR-API-KEY'
     """
     dataset_description = read_txt(os.path.join(caafe_dir, 'dataset_description.txt'))
     if best_config is not None:
@@ -154,7 +153,7 @@ def caafe(best_model, train_merged, label_name, task_name, best_config=None):
     model = CAAFEClassifier(
         base_classifier=base_model,
         llm_model="gpt-4",
-        iterations=10,
+        iterations=1,
         n_splits=5,
         n_repeats=1,
     )
