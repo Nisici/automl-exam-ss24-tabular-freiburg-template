@@ -1,0 +1,15 @@
+
+# Feature name and description: 'is_night'
+# Usefulness: This feature will indicate if it is night time or not. This is useful because bike rentals might be lower during the night.
+# Input samples: 'hour': [23.0, 5.0, 14.0]
+df['is_night'] = df['hour'].apply(lambda x: 1 if (x > 20 or x < 6) else 0)
+
+# Feature name and description: 'is_winter'
+# Usefulness: This feature will indicate if it is winter or not. This is useful because bike rentals might be lower during winter due to cold weather.
+# Input samples: 'month': [6.0, 1.0, 4.0]
+df['is_winter'] = df['month'].apply(lambda x: 1 if (x == 12 or x < 3) else 0)
+
+# Feature name and description: 'peak_hours'
+# Usefulness: This feature will indicate if the current hour is a peak hour or not. This is useful because bike rentals might be higher during peak hours (e.g., commuting hours).
+# Input samples: 'hour': [23.0, 5.0, 14.0]
+df['peak_hours'] = df['hour'].apply(lambda x: 1 if (x >= 7 and x <= 9) or (x >= 17 and x <= 19) else 0)

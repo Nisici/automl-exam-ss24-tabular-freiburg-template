@@ -1,0 +1,13 @@
+Dataset description: you have to predict the amount of bikes rented based on these features:
+season :
+year :
+month :
+hour : hour (0 to 23)
+holiday : weather day is holiday or not
+weekday : day of the week
+workingday : if day is neither weekend nor holiday is 1, otherwise is 0.
+weather :
+temp : Normalized temperature in Celsius. The values are divided to 41 (max)
+feel_temp: Normalized feeling temperature in Celsius. The values are divided to 50 (max)
+humidity: Normalized humidity. The values are divided to 100 (max)
+windspeed: Normalized wind speed. The values are divided to 67 (max)

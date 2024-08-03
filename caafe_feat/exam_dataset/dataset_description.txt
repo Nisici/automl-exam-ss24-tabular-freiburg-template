@@ -1,0 +1,20 @@
+Your goal is to predict how much a house costs, this dataset contains houses for King County.
+You have these available features:
+bedrooms: number of bedrooms
+bathrooms: number of bathrooms
+sqft_living: square feet of living room
+sqft_lot:
+waterfront:
+grade:
+sqft_above: square feet above ground
+sqft_basement:
+yr_built:
+yr_renovated:
+lat: latitude
+long: longitude
+sqft_living15:
+sqft_lot15:
+date_year: year (0 or 1)
+date_month:
+date_day:
+age_of_house:

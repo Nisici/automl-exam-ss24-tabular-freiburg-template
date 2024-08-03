@@ -68,25 +68,37 @@ def train_best_model(model_name, configuration, x, y):
     best_model = None
     if model_name == 'xgboost':
         x = preprocessing(x)
+        y = y.loc[x.index]
         best_model = XGBRegressor(**configuration)
         best_model.fit(x, y)
     else:
         assert HPO.UNKNOWN_MODEL_MSG
     return best_model
 
+def write_txt(filename, raw_text):
+    if not os.path.exists(filename):
+        with open(filename, "x") as f:
+            f.write(raw_text)
+    else:
+        with open(filename, "w") as f:
+            f.write(raw_text)
 def test_model(model, x_test, y_test, output_path, model_name):
-    test_preds = model.predict(x_test)
+    #test_preds = model.predict(x_test)
     logger.info("Writing performance to disk")
     if y_test is not None:
-        r2_test = r2_score(y_test, test_preds)
+        #r2_test = r2_score(y_test, test_preds)
+        r2_test = model.score(x_test, y_test)
         logger.info(f"R^2 on test set: {r2_test}")
-        file_path = os.path.join(output_path, "r2_score.txt")
-        f = open(file_path, "a")
         now = datetime.datetime.now()
         date_string = now.strftime("%Y-%m-%d %H:%M:%S")
         message = "score: {}, model: {}, time: {}\n".format(r2_test, model, date_string)
-        f.write(message)
-        f.close()
+        file_path = os.path.join(output_path, "r2_score.txt")
+        if not os.path.exists(file_path):
+            write_txt(file_path, message)
+        else:
+            f = open(file_path, "a")
+            f.write(message)
+            f.close()
     else:
         # This is the setting for the exam dataset, you will not have access to y_test
         logger.info("No test set")
@@ -120,63 +132,124 @@ def feature_engineering(x_train, y_train, x_test, n_jobs=6, feat_eng='openfe', b
 Use the configuration given by the automl method without feature engineering to create a new model,
 this model gets trained using CAAFE and write the new features into a file
 """
-def caafe(train_merged, label_name, task_name, best_config=None):
+def caafe(best_model, train_merged, label_name, task_name, best_config=None):
     from caafe import CAAFEClassifier
     import openai
     def read_txt(filename):
         with open(filename, 'r') as f:
             content = f.read()
         return content
-
-    def write_txt(filename, raw_text):
-        with open(filename, "w") as f:
-            f.write(raw_text)
     caafe_dir = os.path.join(os.getcwd(), 'caafe', task_name)
-    openai.api_key = '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'
+    """
+    openai.apy_key = 'YOUR-API-KEY'
+    """
     dataset_description = read_txt(os.path.join(caafe_dir, 'dataset_description.txt'))
     if best_config is not None:
+        logging.info("Passing the best hyperparameters configuration to caafe")
+        best_config['enable_categorical'] = True
         base_model = XGBRegressor(**best_config)
     else:
-        base_model = XGBRegressor()
+        logging.info("passing best model to caafe")
+        base_model = best_model
     model = CAAFEClassifier(
         base_classifier=base_model,
-        llm_model="gpt-3.5-turbo",
-        iterations=5
+        llm_model="gpt-4",
+        iterations=10,
+        n_splits=5,
+        n_repeats=1,
     )
     model.fit_pandas(train_merged, target_column_name=label_name, dataset_description=dataset_description)
     write_txt(caafe_dir + '/generated_code.txt', model.code)
     return model
 
 def apply_caafe_code(df):
+    """
+    BOHB BIKE SHARING
+    """
 
-    # (Total_sqft: total square footage of the house)
-    # Usefulness: Total_sqft can capture the overall size of the house, which is an important factor in determining the price.
-    # Input samples: 'sqft_living': [2090.0, 1450.0, 3020.0], 'sqft_lot': [7416.0, 5175.0, 360241.0], 'sqft_above': [1050.0, 1030.0, 3020.0]
-    df['total_sqft'] = df['sqft_living'] + df['sqft_lot'] + df['sqft_above']
+    # Feature name and description: 'is_night'
+    # Usefulness: This feature will indicate if it is night time or not. This is useful because bike rentals might be lower during the night.
+    # Input samples: 'hour': [23.0, 5.0, 14.0]
+    df['is_night'] = df['hour'].apply(lambda x: 1 if (x > 20 or x < 6) else 0)
 
-    # (Age_of_house: number of years since the house was built)
-    # Usefulness: Age_of_house can provide insight into the property's condition and potential impact on the price.
-    # Input samples: 'yr_built': [1970.0, 1995.0, 1992.0], 'date_year': [2014.0, 2014.0, 2014.0]
-    df['age_of_house'] = df['date_year'] - df['yr_built']
-    # (Renovated: binary indicator if the house has been renovated)
-    # Usefulness: Renovated can capture whether a house has been renovated, which can influence the price significantly.
-    # Input samples: 'yr_renovated': [0.0, 0.0, 0.0]
-    df['renovated'] = df['yr_renovated'].apply(lambda x: 1 if x > 0 else 0)
-    # Explanation why the column 'yr_built', 'yr_renovated' are dropped
+    # Feature name and description: 'is_winter'
+    # Usefulness: This feature will indicate if it is winter or not. This is useful because bike rentals might be lower during winter due to cold weather.
+    # Input samples: 'month': [6.0, 1.0, 4.0]
+    df['is_winter'] = df['month'].apply(lambda x: 1 if (x == 12 or x < 3) else 0)
+
+    # Feature name and description: 'peak_hours'
+    # Usefulness: This feature will indicate if the current hour is a peak hour or not. This is useful because bike rentals might be higher during peak hours (e.g., commuting hours).
+    # Input samples: 'hour': [23.0, 5.0, 14.0]
+    df['peak_hours'] = df['hour'].apply(lambda x: 1 if (x >= 7 and x <= 9) or (x >= 17 and x <= 19) else 0)
+    """
+    BOHB BRAZILIAN HOUSES
+    # Feature name: 'tax_per_area'
+    # Usefulness: This feature gives the property tax per unit area. It can help in understanding the tax efficiency of the house.
+    # Input samples: 'area': [45.0, 278.0, 280.0], 'property_tax_(BRL)': [8.0, 155.0, 1126.0]
+    df['tax_per_area'] = df['property_tax_(BRL)'] / df['area']  # Feature name: 'parking_per_room'
+    # Usefulness: This feature gives the ratio of parking spaces to rooms. It can help in understanding the convenience of the house.
+    # Input samples: 'parking_spaces': [0.0, 4.0, 2.0], 'rooms': [2.0, 4.0, 3.0]
+    df['parking_per_room'] = df['parking_spaces'] / df['rooms']
+
+    # Dropping 'parking_spaces' and 'rooms' as they are now represented in the 'parking_per_room' feature
+    df.drop(columns=['parking_spaces', 'rooms'], inplace=True)
+    """
+    """
+    THESE FEATURES WORK WITH HYPERBAND for exam_dataset
+    # (House_age_and_renovation)
+    # Usefulness: Combining information about the age of the house and whether it has been renovated can capture the history of the property, which can affect its price.
+    # Input samples: 'yr_built': [1970.0, 1995.0, 1992], 'yr_renovated': [0.0, 0.0, 0.0]
+    df['house_age_and_renovation'] = 2022 - df['yr_built'] + df['yr_renovated']
+
+    # Drop 'yr_built' and 'yr_renovated' columns as they are redundant after creating 'house_age_and_renovation'
     df.drop(columns=['yr_built', 'yr_renovated'], inplace=True)
 
+    # (Living_area_ratio)
+    # Usefulness: The ratio between the living room area and the total house area can provide insights into the layout and functionality of the house.
+    # Input samples: 'sqft_living': [2090.0, 1450.0, 3020.0], 'sqft_lot': [7416.0, 5175.0, 360241.0]
+    df['living_area_ratio'] = df['sqft_living'] / (df['sqft_living'] + df['sqft_lot'])
+
+    # (City_proximity_score)
+    # Usefulness: Creating a proximity score based on latitude and longitude can capture the relative location of the house.
+    # Input samples: 'lat': [47.41, 47.71, 47.27], 'long': [-122.18, -122.34, -122.09]
+    df['city_proximity_score'] = df['lat'] + df['long']
+    # (Distance_from_city_center)
+    # Usefulness: Distance of the house from the city center can be a significant factor in determining house prices, as proximity to the city center often affects property values.
+    # Input samples: 'lat': [47.41, 47.71, 47.27], 'long': [-122.18, -122.34, -122.09]
+    df['distance_from_city_center'] = ((df['lat'] - 47.6) ** 2 + (df['long'] + 122.3) ** 2) ** 0.5
+    # Explanation why the column 'sqft_basement' is dropped
+    df.drop(columns=['sqft_basement'], inplace=True)
+    # Explanation why the column 'date_month' is dropped
+    df.drop(columns=['date_month'], inplace=True)
+
+    # Explanation why the column 'date_day' is dropped
+    df.drop(columns=['date_day'], inplace=True)
+    # Feature name: 'bed_bath_ratio'
+    # Usefulness: The ratio of bedrooms to bathrooms can provide an insight into the layout of the house, which could be a factor influencing the price.
+    # Input samples: 'bedrooms': [4.0, 3.0, 3.0], 'bathrooms': [1.75, 2.5, 1.75]
+    df['bed_bath_ratio'] = df['bedrooms'] / df['bathrooms']
+
+    # Explanation why the column 'bedrooms' and 'bathrooms' are dropped
+    # The 'bedrooms' and 'bathrooms' features are now represented in the 'bed_bath_ratio' feature, making them redundant.
+    df.drop(columns=['bedrooms', 'bathrooms'], inplace=True)
+    """
     return df
+
 """
-Make all dataset numeric and replace NaN values with zeros.
-Drop columns which have only 1 unique value 
+Ecnode categorical features into integers
 """
 def preprocessing(df):
-    df = df.apply(pd.to_numeric, errors='coerce')
-    df.fillna(0, inplace=True)
-    nunique = df.nunique()
-    cols_to_drop = nunique[nunique == 1].index
-    df.drop(cols_to_drop, axis=1)
+    from sklearn.preprocessing import LabelEncoder
+    df = df.replace([np.inf, -np.inf], np.nan).dropna()
+    le = LabelEncoder()
+    for col in df.select_dtypes(include=['object']).columns:
+        df[col] = le.fit_transform(df[col])
+    df = df.astype(float)
     return df
+
+def make_folder(dir):
+    if not os.path.exists(dir):
+        os.makedirs(dir)
 
 def main(
     task: str,
@@ -191,15 +264,20 @@ def main(
     """
         DATA LOADING
     """
+    seed = 42
     dataset = Dataset.load(datadir=DATADIR, task=task, fold=fold)
     x_train, y_train, x_test, y_test = dataset.X_train, dataset.y_train, dataset.X_test, dataset.y_test
     """
         DATA PREPROCESSING
     """
-    x_train = preprocessing(x_train)
-    x_test = preprocessing(x_test)
+    working_dir = os.getcwd()
+    if feat_eng == 'caafe':
+        make_folder(os.path.join(working_dir, 'caafe_feat'))
+        caafe_dir = os.path.join(working_dir, 'caafe_feat', task)
+        make_folder(caafe_dir)
+        assert os.path.exists(os.path.join(caafe_dir, 'dataset_description.txt')), "You have to create a dataset_description.txt with the description of the dataset"
     if task == 'exam_dataset':
-        exam_path = os.path.join(os.getcwd(), 'data', 'exam_dataset', '1')
+        exam_path = os.path.join(working_dir, 'data', 'exam_dataset', '1')
         x_test = pd.read_parquet(os.path.join(exam_path, 'X_test.parquet'))
         test_data = pd.read_csv(os.path.join(exam_path, 'kc_house_data.csv'))
         test_data['date_year'] = test_data['date'].str[0:4].astype(int)
@@ -211,23 +289,34 @@ def main(
         cols.append('price')
         copy_of_exam_test = test_data[cols]
         x_train, x_test, y_train, y_test = train_test_split(
-            copy_of_exam_test.drop(['price'], axis=1), copy_of_exam_test['price'], test_size=0.1, random_state=42)
+            copy_of_exam_test.drop(['price'], axis=1), copy_of_exam_test['price'], test_size=0.1, random_state=seed)
+    """
+    if not test_caafe_feat:
+        x_train = apply_caafe_code(x_train)
+        x_test = apply_caafe_code(x_test)
+    """
+    logger.info(x_train.columns)
+    x_train = preprocessing(x_train)
+    x_test = preprocessing(x_test)
+    y_train = y_train.loc[x_train.index]
+    y_test = y_test.loc[x_test.index]
+
+    logger.info("X TRAIN AFTER PREPROCESSING: {} \n columns: {}".format(x_train, x_train.columns))
     plot_path = os.path.join(os.getcwd(), "plots")
     output_path_without = os.path.join(output_path, 'scores', task, 'without', model)
     output_path_feat_eng = os.path.join(output_path, 'scores', task, feat_eng, model)
+    best_configuration = None
     """
                 AUTOML OPTIMIZATION without feature engineering
-    """
     """
     logger.info("Fitting AutoML without feature engineering")
     logger.info("Chosen model: {}".format(model))
     plot_path_no_feat_eng = os.path.join(plot_path, "without_feat_eng")
     best_configuration, best_performance = HPO.choose_best_hyperparameters(x_train, y_train,
                                                                            plot_path=plot_path_no_feat_eng,
-                                                                           model_name=model)
+                                                                           model_name=model, seed=seed)
     best_model = train_best_model(model, best_configuration, x_train, y_train)
     test_acc = test_model(best_model, x_test, y_test, output_path_without, model_name=model)
-    """
     """
            AUTOML OPTIMIZATION with feature engineering
     """
@@ -248,15 +337,19 @@ def main(
         logger.info("Fitting AutoML with feature engineering: {}".format(feat_eng))
         label_name = y_train.name
         train_merged = x_train.merge(y_train, left_index=True, right_index=True)
-        model = caafe(train_merged, label_name, task)
+        model = caafe(best_model, train_merged, label_name, task)
         test_acc_feat_eng = test_model(model, x_test, y_test, output_path_feat_eng, model_name=model)
         logger.info("Test accuracy after feat eng: {}".format(test_acc_feat_eng))
     elif test_caafe_feat:
         output_path_feat_eng = os.path.join(output_path, 'scores', task, 'caafe', model)
         x_train = apply_caafe_code(x_train)
         x_test = apply_caafe_code(x_test)
+        x_train = preprocessing(x_train)
+        x_test = preprocessing(x_test)
+        y_train = y_train.loc[x_train.index]
+        y_test = y_test.loc[x_test.index]
         best_configuration, best_performance = HPO.choose_best_hyperparameters(x_train, y_train,
-                                                                               plot_path=plot_path_no_feat_eng,
+                                                                               plot_path=None,
                                                                                model_name=model)
         best_model = train_best_model(model, best_configuration, x_train, y_train)
         test_acc_caafe = test_model(best_model, x_test, y_test, output_path_feat_eng, model_name=model)

@@ -1,0 +1,13 @@
+Dataset Description: your task is to predict the cost of house renting.
+These are the features:
+city
+area
+rooms
+bathroom
+parking_spaces
+animal
+furniture
+hoa_(BRL): Homeowners association tax
+rent_amount_(BRL)
+property_tax_(BRL)
+fire_insurance_(BRL)
